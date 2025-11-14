@@ -734,6 +734,132 @@
             position: relative;
             border-radius: 8px;
         }
+
+        /* --- Status Block Renderer --- */
+        .status-block-shell {
+            margin-top: 15px;
+            border-radius: 18px;
+            padding: 18px;
+            background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(49, 46, 129, 0.85));
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            color: #f8fafc;
+            box-shadow: 0 12px 35px rgba(2, 6, 23, 0.45);
+        }
+        .status-block-header {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .status-pill {
+            border-radius: 14px;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            padding: 12px;
+            background: rgba(15, 23, 42, 0.5);
+        }
+        .status-pill span {
+            display: block;
+            font-size: 0.75em;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: rgba(248, 250, 252, 0.75);
+            margin-bottom: 4px;
+        }
+        .status-pill strong {
+            font-size: 1.05em;
+            color: #fff;
+            word-break: break-word;
+        }
+        .status-block-section {
+            margin-top: 16px;
+        }
+        .status-block-section h3 {
+            margin: 0 0 8px;
+            font-size: 1em;
+            letter-spacing: 0.05em;
+            color: #f8fafc;
+        }
+        .status-block-maintext {
+            border-radius: 12px;
+            border: 1px solid rgba(148, 163, 184, 0.3);
+            background: rgba(15, 23, 42, 0.45);
+            padding: 12px;
+            font-size: 0.95em;
+            line-height: 1.6;
+        }
+        .status-block-maintext p {
+            margin: 0 0 0.8em;
+        }
+        .status-block-maintext p:last-child {
+            margin-bottom: 0;
+        }
+        .status-character-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px;
+        }
+        .status-character-card {
+            border-radius: 12px;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            background: rgba(255, 255, 255, 0.04);
+            padding: 12px;
+        }
+        .status-character-card h4 {
+            margin: 0 0 8px;
+            font-size: 1em;
+            color: #fff;
+        }
+        .status-character-card ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .status-character-card li {
+            margin-bottom: 8px;
+        }
+        .status-character-card li:last-child {
+            margin-bottom: 0;
+        }
+        .status-character-card li span {
+            display: block;
+            font-size: 0.8em;
+            letter-spacing: 0.08em;
+            color: rgba(248, 250, 252, 0.75);
+            margin-bottom: 2px;
+        }
+        .status-character-card li p {
+            margin: 0;
+            color: #e2e8f0;
+            font-size: 0.9em;
+        }
+        .status-actions {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .status-actions li {
+            border-left: 3px solid rgba(248, 250, 252, 0.45);
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 10px;
+            font-size: 0.95em;
+            color: #f8fafc;
+        }
+        .status-empty {
+            color: rgba(248, 250, 252, 0.75);
+            font-size: 0.9em;
+        }
+        .status-block-error {
+            padding: 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(248, 113, 113, 0.45);
+            background: rgba(248, 113, 113, 0.15);
+            color: #fecaca;
+            font-size: 0.9em;
+        }
         
         /* Tables from Markdown */
         .message .content table {
@@ -2056,6 +2182,7 @@ body #chat-container{ padding-bottom: 6px !important; }
     <script src="https://cdn.jsdelivr.net/npm/gpt-tokenizer@2.1.1/dist/index.browser.js" defer></script></script>
     <!-- Optional: SortableJS for drag-and-drop -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js" defer></script></script>
+    <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js" defer></script>
 
 
     <script>
@@ -3012,7 +3139,13 @@ body #chat-container{ padding-bottom: 6px !important; }
                 }
             }
             // END: MODIFICATION - Combine Preset and Character Regex Rules
-            
+
+            const statusPayload = role === 'assistant' ? extractStatusBlockSegments(processedContent) : null;
+            if (statusPayload) {
+                renderStatusBlockInto(contentDiv, statusPayload);
+                processedContent = statusPayload.remainingText || '';
+            }
+
             if (role === 'user') {
                 if (Array.isArray(content)) {
                     const attachments = content.filter(p => p.type === 'text_attachment' || p.type === 'image_url');
@@ -3635,7 +3768,273 @@ body #chat-container{ padding-bottom: 6px !important; }
                 return processedText.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
             }
         };
-        
+
+        const STATUS_BLOCK_REGEX = /<Status_block>\s*([\s\S]*?)\s*<\/Status_block>/i;
+        const STATUS_MAINTEXT_REGEX = /<maintext>\s*([\s\S]*?)\s*<\/maintext>/i;
+
+        function extractStatusBlockSegments(text) {
+            if (typeof text !== 'string') return null;
+            const statusMatch = text.match(STATUS_BLOCK_REGEX);
+            if (!statusMatch) return null;
+            const maintextMatch = text.match(STATUS_MAINTEXT_REGEX);
+            let remaining = text.replace(statusMatch[0], '');
+            if (maintextMatch) {
+                remaining = remaining.replace(maintextMatch[0], '');
+            }
+            return {
+                yaml: statusMatch[1].trim(),
+                maintext: maintextMatch ? maintextMatch[1].trim() : '',
+                remainingText: remaining.trim(),
+            };
+        }
+
+        function renderStatusBlockInto(contentDiv, payload) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'status-block-shell';
+            contentDiv.appendChild(wrapper);
+
+            if (!window.jsyaml) {
+                wrapper.innerHTML = '<div class="status-block-error">缺少 js-yaml 库，无法解析状态栏。</div>';
+                return;
+            }
+
+            let yamlData;
+            try {
+                yamlData = window.jsyaml.load(payload.yaml);
+            } catch (error) {
+                wrapper.innerHTML = `<div class="status-block-error">Status_block 解析失败：${escapeHtml(error.message)}</div>`;
+                return;
+            }
+
+            if (!yamlData || typeof yamlData !== 'object') {
+                wrapper.innerHTML = '<div class="status-block-error">Status_block 数据为空或格式异常。</div>';
+                return;
+            }
+
+            const rootKey = Object.keys(yamlData)[0];
+            const rootData = rootKey ? yamlData[rootKey] : yamlData;
+            if (!rootData || typeof rootData !== 'object') {
+                wrapper.innerHTML = '<div class="status-block-error">未找到有效的状态栏字段。</div>';
+                return;
+            }
+
+            const header = document.createElement('div');
+            header.className = 'status-block-header';
+            header.appendChild(createStatusHeaderPill('📍 地点', readStatusField(rootData, ['地点', '位置', 'location', 'place']) || '未知地点'));
+            header.appendChild(createStatusHeaderPill('⏰ 时间', readStatusField(rootData, ['日期', '时间', 'datetime', 'time']) || '未知时间'));
+
+            const actionBlockKey = findStatusFieldByKeywords(rootData, ['行动', '选项', 'action', 'option']);
+            const actionBlock = actionBlockKey ? rootData[actionBlockKey] : null;
+            const ownerName = actionBlock ? readStatusField(actionBlock, ['名字', '姓名', '所有者', 'owner', 'name']) : '';
+            header.appendChild(createStatusHeaderPill('🧭 当前执行者', ownerName || '未知'));
+            wrapper.appendChild(header);
+
+            if (payload.maintext) {
+                const mainSection = document.createElement('div');
+                mainSection.className = 'status-block-section';
+                const heading = document.createElement('h3');
+                heading.textContent = '剧情正文';
+                mainSection.appendChild(heading);
+
+                const maintextBody = document.createElement('div');
+                maintextBody.className = 'status-block-maintext';
+                const paragraphs = payload.maintext.split(/\n\s*\n/);
+                paragraphs.forEach(paragraph => {
+                    const trimmed = paragraph.trim();
+                    if (!trimmed) return;
+                    const p = document.createElement('p');
+                    p.innerHTML = escapeHtml(trimmed).replace(/\n/g, '<br>');
+                    maintextBody.appendChild(p);
+                });
+                if (!maintextBody.childNodes.length) {
+                    const p = document.createElement('p');
+                    p.textContent = payload.maintext.trim();
+                    maintextBody.appendChild(p);
+                }
+                mainSection.appendChild(maintextBody);
+                wrapper.appendChild(mainSection);
+            }
+
+            const charSection = document.createElement('div');
+            charSection.className = 'status-block-section';
+            const charHeading = document.createElement('h3');
+            charHeading.textContent = '角色状态';
+            charSection.appendChild(charHeading);
+            const charGrid = document.createElement('div');
+            charGrid.className = 'status-character-grid';
+            const userListKey = findStatusFieldByKeywords(rootData, ['用户列表', '角色列表', '用户', '角色', 'character', 'user']);
+            const characters = userListKey ? rootData[userListKey] : null;
+            if (Array.isArray(characters) && characters.length) {
+                characters.forEach(entry => {
+                    const normalized = normalizeStatusCharacter(entry);
+                    const card = document.createElement('div');
+                    card.className = 'status-character-card';
+                    const title = document.createElement('h4');
+                    title.textContent = normalized.name;
+                    card.appendChild(title);
+                    const list = document.createElement('ul');
+                    if (!normalized.attributes.length) {
+                        const li = document.createElement('li');
+                        const span = document.createElement('span');
+                        span.textContent = '说明';
+                        const p = document.createElement('p');
+                        p.textContent = '无详细信息';
+                        li.appendChild(span);
+                        li.appendChild(p);
+                        list.appendChild(li);
+                    } else {
+                        normalized.attributes.forEach(attr => {
+                            const li = document.createElement('li');
+                            const span = document.createElement('span');
+                            span.textContent = attr.label;
+                            const p = document.createElement('p');
+                            p.textContent = attr.value;
+                            li.appendChild(span);
+                            li.appendChild(p);
+                            list.appendChild(li);
+                        });
+                    }
+                    card.appendChild(list);
+                    charGrid.appendChild(card);
+                });
+            } else {
+                const empty = document.createElement('div');
+                empty.className = 'status-empty';
+                empty.textContent = '没有角色数据';
+                charGrid.appendChild(empty);
+            }
+            charSection.appendChild(charGrid);
+            wrapper.appendChild(charSection);
+
+            const actionsSection = document.createElement('div');
+            actionsSection.className = 'status-block-section';
+            const actionsHeading = document.createElement('h3');
+            actionsHeading.textContent = '行动选项';
+            actionsSection.appendChild(actionsHeading);
+            const optionsField = actionBlock ? findStatusFieldByKeywords(actionBlock, ['选项', 'options', 'choices']) : null;
+            const options = optionsField ? actionBlock[optionsField] : null;
+            if (Array.isArray(options) && options.length) {
+                const list = document.createElement('ul');
+                list.className = 'status-actions';
+                options.forEach((optionText, index) => {
+                    const li = document.createElement('li');
+                    li.textContent = optionText || `选项 ${index + 1}`;
+                    list.appendChild(li);
+                });
+                actionsSection.appendChild(list);
+            } else {
+                const empty = document.createElement('div');
+                empty.className = 'status-empty';
+                empty.textContent = '没有可用选项';
+                actionsSection.appendChild(empty);
+            }
+            wrapper.appendChild(actionsSection);
+        }
+
+        function createStatusHeaderPill(label, value) {
+            const pill = document.createElement('div');
+            pill.className = 'status-pill';
+            const span = document.createElement('span');
+            span.textContent = label;
+            const strong = document.createElement('strong');
+            strong.textContent = value || '未知';
+            pill.appendChild(span);
+            pill.appendChild(strong);
+            return pill;
+        }
+
+        function findStatusFieldByKeywords(source, keywords) {
+            if (!source || typeof source !== 'object') return null;
+            const keys = Object.keys(source);
+            for (const key of keys) {
+                const lower = key.toLowerCase();
+                if (keywords.some(word => lower.includes(word.toLowerCase()))) {
+                    return key;
+                }
+            }
+            return null;
+        }
+
+        function readStatusField(source, keywords) {
+            const key = findStatusFieldByKeywords(source, keywords);
+            if (!key) return '';
+            const value = source[key];
+            if (typeof value === 'string') return value.trim();
+            if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+            return formatStatusValue(value);
+        }
+
+        function normalizeStatusCharacter(entry) {
+            if (!entry) {
+                return { name: '未知角色', attributes: [] };
+            }
+
+            let payload = entry;
+            if (typeof entry === 'object' && entry !== null) {
+                const nestedKey = findStatusFieldByKeywords(entry, ['用户', '角色', '人物', 'character', 'person']);
+                if (nestedKey && typeof entry[nestedKey] === 'object') {
+                    payload = entry[nestedKey];
+                }
+            } else {
+                return { name: String(entry), attributes: [] };
+            }
+
+            if (!payload || typeof payload !== 'object') {
+                return { name: '未知角色', attributes: [] };
+            }
+
+            const name = readStatusField(payload, ['名字', '姓名', '名称', 'name']) || '未知角色';
+            const attributes = [];
+            Object.keys(payload).forEach(key => {
+                const lower = key.toLowerCase();
+                if (lower.includes('名字') || lower === 'name') return;
+                const normalizedValue = formatStatusValue(payload[key]);
+                if (normalizedValue) {
+                    attributes.push({ label: key, value: normalizedValue });
+                }
+            });
+            return { name, attributes };
+        }
+
+        function formatStatusValue(value) {
+            if (value === null || value === undefined) return '';
+            if (typeof value === 'string') return value.trim();
+            if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+            if (Array.isArray(value)) {
+                return value
+                    .map(item => {
+                        if (item === null || item === undefined) return '';
+                        if (typeof item === 'object') {
+                            const subKey = Object.keys(item)[0];
+                            if (subKey) {
+                                return `${subKey}: ${formatStatusValue(item[subKey])}`;
+                            }
+                            return formatStatusValue(Object.values(item)[0]);
+                        }
+                        return formatStatusValue(item);
+                    })
+                    .filter(Boolean)
+                    .join('；');
+            }
+            if (typeof value === 'object') {
+                return Object.entries(value)
+                    .map(([key, val]) => `${key}: ${formatStatusValue(val)}`)
+                    .filter(Boolean)
+                    .join('；');
+            }
+            return '';
+        }
+
+        function escapeHtml(text) {
+            if (typeof text !== 'string') return '';
+            return text
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         const enhanceCodeBlocks = (container) => {
             container.querySelectorAll('pre').forEach(pre => {
                 if (pre.querySelector('.code-header')) return;
